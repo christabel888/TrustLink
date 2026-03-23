@@ -1,6 +1,4 @@
-//! Core data types and error definitions for TrustLink.
-
-use soroban_sdk::{contracterror, contracttype, Address, Bytes, Env, String};
+use soroban_sdk::{contracterror, contracttype, Address, Env, String};
 
 /// A single attestation record stored on-chain.
 #[contracttype]
@@ -77,11 +75,13 @@ impl Attestation {
         claim_type: &String,
         timestamp: u64,
     ) -> String {
+        use soroban_sdk::xdr::ToXdr;
         let data = (issuer.clone(), subject.clone(), claim_type.clone(), timestamp);
-        let hash = env.crypto().sha256(&env.to_xdr(&data));
+        let xdr_bytes = data.to_xdr(env);
+        let hash = env.crypto().sha256(&xdr_bytes);
         let hash_bytes = hash.to_array();
-        let id_bytes = Bytes::from_slice(env, &hash_bytes[..16]);
-        String::from_bytes(env, &id_bytes)
+        // Use first 16 bytes as ID
+        String::from_bytes(env, &hash_bytes[..16])
     }
 
     /// Compute the current [`AttestationStatus`] given `current_time`.
