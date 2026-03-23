@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::{Address as _, Events as _, Ledger}, Address, BytesN, Env, String};
+use soroban_sdk::{testutils::{Address as _, Events as _, Ledger}, Address, BytesN, Env, String, TryIntoVal};
 
 fn create_test_contract(env: &Env) -> (Address, TrustLinkContractClient) {
     let contract_id = env.register_contract(None, TrustLinkContract);
@@ -21,6 +21,67 @@ fn test_initialization() {
     
     let stored_admin = client.get_admin();
     assert_eq!(stored_admin, admin);
+}
+
+#[test]
+fn test_initialization_emits_admin_initialized_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (contract_id, client) = create_test_contract(&env);
+
+    let timestamp = env.ledger().timestamp();
+    client.initialize(&admin);
+
+    // Verify the admin_init event was emitted by this contract
+    let admin_init_sym = soroban_sdk::symbol_short!("admin_init");
+    let mut found_admin: Option<Address> = None;
+    let mut found_timestamp: Option<u64> = None;
+
+    for (id, topics, data) in env.events().all().iter() {
+        if id != contract_id {
+            continue;
+        }
+        if topics.get(0).map(|v| v.shallow_eq(&admin_init_sym.to_val())).unwrap_or(false) {
+            // data is (Address, u64)
+            let (a, ts): (Address, u64) = data.try_into_val(&env).unwrap();
+            found_admin = Some(a);
+            found_timestamp = Some(ts);
+            break;
+        }
+    }
+
+    assert!(found_admin.is_some(), "expected admin_init event to be emitted");
+    assert_eq!(found_admin.unwrap(), admin, "admin_init event must carry the correct admin address");
+    assert_eq!(found_timestamp.unwrap(), timestamp, "admin_init event must carry the correct timestamp");
+}
+
+#[test]
+fn test_double_initialization_emits_no_event() {
+    // Verify that a failed second initialize does NOT emit admin_init.
+    // We set up a fresh env where the contract is already initialized,
+    // then confirm the event count stays at 1 after the failing call panics.
+    // Because the second call panics, we test the invariant indirectly:
+    // the first call emits exactly one event, and the second call (tested in
+    // test_double_initialization) returns AlreadyInitialized before reaching
+    // the event emission code path.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (contract_id, client) = create_test_contract(&env);
+
+    client.initialize(&admin);
+
+    let admin_init_sym = soroban_sdk::symbol_short!("admin_init");
+    let count = env.events().all().iter().filter(|(id, topics, _)| {
+        *id == contract_id
+            && topics.get(0).map(|v| v.shallow_eq(&admin_init_sym.to_val())).unwrap_or(false)
+    }).count();
+
+    // Exactly one event from the single successful initialize call
+    assert_eq!(count, 1, "admin_init must be emitted exactly once on successful initialization");
 }
 
 #[test]

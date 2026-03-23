@@ -37,6 +37,8 @@ impl TrustLinkContract {
     /// Must be called exactly once after deployment. The `admin` address
     /// must authorize this call.
     ///
+    /// Emits an [`events::Events::admin_initialized`] event on success.
+    ///
     /// # Parameters
     /// - `admin` — address that will control issuer registration.
     ///
@@ -54,6 +56,7 @@ impl TrustLinkContract {
 
         admin.require_auth();
         Storage::set_admin(&env, &admin);
+        Events::admin_initialized(&env, &admin, env.ledger().timestamp());
         Ok(())
     }
 

@@ -71,6 +71,24 @@ impl Events {
         );
     }
 
+    /// Emit an event when the contract is successfully initialized.
+    ///
+    /// # Event schema
+    /// ```text
+    /// topics: ("admin_init",)
+    /// data:   (admin: Address, timestamp: u64)
+    /// ```
+    ///
+    /// # Parameters
+    /// - `admin`     — the address set as administrator during initialization.
+    /// - `timestamp` — ledger timestamp at the moment of initialization.
+    pub fn admin_initialized(env: &Env, admin: &Address, timestamp: u64) {
+        env.events().publish(
+            (symbol_short!("admin_init"),),
+            (admin.clone(), timestamp),
+        );
+    }
+
     /// Emit an event when the contract WASM is upgraded.
     ///
     /// # Event schema
