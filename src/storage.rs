@@ -5,7 +5,7 @@
 //! (issuers, attestations, indexes) each have their own TTL entry.
 
 use soroban_sdk::{contracttype, Address, Env, String, Vec};
-use crate::types::{Attestation, Error};
+use crate::types::{Attestation, Error, IssuerMetadata};
 
 /// Keys used to address data in contract storage.
 #[contracttype]
@@ -20,6 +20,8 @@ pub enum StorageKey {
     SubjectAttestations(Address),
     /// Ordered list of attestation IDs created by an issuer address.
     IssuerAttestations(Address),
+    /// Optional metadata associated with a registered issuer.
+    IssuerMetadata(Address),
 }
 
 const DAY_IN_LEDGERS: u32 = 17280;
@@ -128,5 +130,19 @@ impl Storage {
         attestations.push_back(attestation_id.clone());
         env.storage().persistent().set(&key, &attestations);
         env.storage().persistent().extend_ttl(&key, INSTANCE_LIFETIME, INSTANCE_LIFETIME);
+    }
+
+    /// Persist `metadata` for `issuer` and refresh its TTL.
+    pub fn set_issuer_metadata(env: &Env, issuer: &Address, metadata: &IssuerMetadata) {
+        let key = StorageKey::IssuerMetadata(issuer.clone());
+        env.storage().persistent().set(&key, metadata);
+        env.storage().persistent().extend_ttl(&key, INSTANCE_LIFETIME, INSTANCE_LIFETIME);
+    }
+
+    /// Retrieve metadata for `issuer`, or `None` if not set.
+    pub fn get_issuer_metadata(env: &Env, issuer: &Address) -> Option<IssuerMetadata> {
+        env.storage()
+            .persistent()
+            .get(&StorageKey::IssuerMetadata(issuer.clone()))
     }
 }

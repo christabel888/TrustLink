@@ -17,7 +17,7 @@ mod events;
 mod test;
 
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
-use types::{Attestation, AttestationStatus, Error};
+use types::{Attestation, AttestationStatus, Error, IssuerMetadata};
 use storage::Storage;
 use validation::Validation;
 use events::Events;
@@ -472,9 +472,58 @@ impl TrustLinkContract {
         Err(Error::NotFound)
     }
 
-    /// Get the admin address
-    /// Return the current administrator address.
+    /// Set metadata for the calling issuer.
     ///
+    /// Only the issuer themselves may set their own metadata. The issuer must
+    /// already be registered in the issuer registry.
+    ///
+    /// # Parameters
+    /// - `issuer` — the issuer address (must authorize).
+    /// - `metadata` — [`IssuerMetadata`] containing name, url, and description.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] — `issuer` is not a registered issuer.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// client.set_issuer_metadata(&issuer, &IssuerMetadata {
+    ///     name: String::from_str(&env, "Acme KYC"),
+    ///     url: String::from_str(&env, "https://acme.example"),
+    ///     description: String::from_str(&env, "Trusted KYC provider"),
+    /// });
+    /// ```
+    pub fn set_issuer_metadata(
+        env: Env,
+        issuer: Address,
+        metadata: IssuerMetadata,
+    ) -> Result<(), Error> {
+        issuer.require_auth();
+        Validation::require_issuer(&env, &issuer)?;
+
+        Storage::set_issuer_metadata(&env, &issuer, &metadata);
+        Ok(())
+    }
+
+    /// Retrieve metadata for an issuer.
+    ///
+    /// # Parameters
+    /// - `issuer` — the issuer address to look up.
+    ///
+    /// # Returns
+    /// `Some(IssuerMetadata)` if the issuer has set metadata, `None` otherwise.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// if let Some(meta) = client.get_issuer_metadata(&issuer) {
+    ///     println!("{}", meta.name);
+    /// }
+    /// ```
+    pub fn get_issuer_metadata(env: Env, issuer: Address) -> Option<IssuerMetadata> {
+        Storage::get_issuer_metadata(&env, &issuer)
+    }
+
+    /// Get the admin address
+    /// Return the current administrator address.    ///
     /// # Returns
     /// The admin [`Address`] set during [`initialize`].
     ///
