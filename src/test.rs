@@ -630,3 +630,47 @@ fn test_imported_attestation_can_be_expired_today() {
     );
     assert!(!client.has_valid_claim(&subject, &claim_type));
 }
+
+#[test]
+fn test_has_valid_claim_from_issuer() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, issuer1, client) = setup(&env);
+    let subject = Address::generate(&env);
+    let claim_type = String::from_str(&env, "KYC_PASSED");
+    
+    let issuer2 = Address::generate(&env);
+    client.register_issuer(&admin, &issuer2);
+
+    // Initial state: no claims
+    assert!(!client.has_valid_claim(&subject, &claim_type));
+    assert!(!client.has_valid_claim_from_issuer(&subject, &claim_type, &issuer1));
+    assert!(!client.has_valid_claim_from_issuer(&subject, &claim_type, &issuer2));
+
+    // Issuer 1 creates a claim
+    let id1 = client.create_attestation(&issuer1, &subject, &claim_type, &None, &None);
+    assert!(client.has_valid_claim(&subject, &claim_type));
+    assert!(client.has_valid_claim_from_issuer(&subject, &claim_type, &issuer1));
+    assert!(!client.has_valid_claim_from_issuer(&subject, &claim_type, &issuer2));
+
+    // Issuer 2 creates a claim
+    let id2 = client.create_attestation(&issuer2, &subject, &claim_type, &None, &None);
+    assert!(client.has_valid_claim_from_issuer(&subject, &claim_type, &issuer1));
+    assert!(client.has_valid_claim_from_issuer(&subject, &claim_type, &issuer2));
+
+    // Revoke issuer 1's claim
+    client.revoke_attestation(&issuer1, &id1);
+    assert!(!client.has_valid_claim_from_issuer(&subject, &claim_type, &issuer1));
+    assert!(client.has_valid_claim_from_issuer(&subject, &claim_type, &issuer2)); // issuer 2 is still valid
+    assert!(client.has_valid_claim(&subject, &claim_type));
+
+    // Expire issuer 2's claim
+    let now = env.ledger().timestamp();
+    client.update_expiration(&issuer2, &id2, &Some(now + 100));
+    assert!(client.has_valid_claim_from_issuer(&subject, &claim_type, &issuer2));
+
+    env.ledger().with_mut(|li| li.timestamp = now + 101);
+    assert!(!client.has_valid_claim_from_issuer(&subject, &claim_type, &issuer2));
+    assert!(!client.has_valid_claim(&subject, &claim_type));
+}
