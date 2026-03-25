@@ -1,4 +1,4 @@
-.PHONY: build test optimize clean install help
+.PHONY: build test optimize clean install help local-deploy
 
 help:
 	@echo "TrustLink Smart Contract - Makefile Commands"
@@ -8,6 +8,7 @@ help:
 	@echo "make optimize  - Build optimized release version"
 	@echo "make clean     - Clean build artifacts"
 	@echo "make install   - Install required dependencies"
+	@echo "make local-deploy - Deploy and initialize contract on local Stellar network"
 
 install:
 	@echo "Installing Rust and Soroban CLI..."
@@ -39,3 +40,7 @@ fmt:
 clippy:
 	@echo "Running clippy..."
 	cargo clippy --all-targets -- -D warnings
+
+local-deploy: build
+	@echo "Deploying TrustLink contract to local Stellar network..."
+	./scripts/setup_local.sh
