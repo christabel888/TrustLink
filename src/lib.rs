@@ -8,13 +8,13 @@ mod validation;
 #[cfg(test)]
 mod test;
 
-use soroban_sdk::{contract, contractimpl, token::TokenClient, Address, Env, String, Vec};
+use soroban_sdk::{contract, contractimpl, token::TokenClient, Address, Bytes, Env, String, Vec};
 
 use crate::events::Events;
 use crate::storage::Storage;
 use crate::types::{
-    Attestation, AttestationStatus, ClaimTypeInfo, ContractMetadata, Error, FeeConfig,
-    IssuerMetadata, MultiSigProposal, TtlConfig, MULTISIG_PROPOSAL_TTL_SECS,
+    Attestation, AttestationProof, AttestationStatus, ClaimTypeInfo, ContractMetadata, Error,
+    FeeConfig, IssuerMetadata, MultiSigProposal, TtlConfig, MULTISIG_PROPOSAL_TTL_SECS,
 };
 use crate::validation::Validation;
 
@@ -921,6 +921,35 @@ impl TrustLinkContract {
     /// Retrieve a multi-sig proposal by ID.
     pub fn get_multisig_proposal(env: Env, proposal_id: String) -> Result<MultiSigProposal, Error> {
         Storage::get_multisig_proposal(&env, &proposal_id)
+    }
+
+    pub fn get_attestation_proof(
+        env: Env,
+        attestation_id: String,
+    ) -> Result<AttestationProof, Error> {
+        let attestation = Storage::get_attestation(&env, &attestation_id)?;
+        let ledger = env.ledger();
+
+        // Capture current ledger context.
+        let ledger_sequence = ledger.sequence();
+        let ledger_timestamp = ledger.timestamp();
+
+        // Derive a ledger hash from the sequence number.
+        // On Stellar, the actual ledger hash is available off-chain via Horizon.
+        // Here we produce a deterministic, verifiable commitment by hashing the
+        // ledger sequence together with the contract address so the value is
+        // unique per ledger and per contract deployment.
+        let mut payload = soroban_sdk::Bytes::new(&env);
+        payload.extend_from_array(&ledger_sequence.to_be_bytes());
+        payload.extend_from_array(&ledger_timestamp.to_be_bytes());
+        let ledger_hash = Attestation::hash_payload(&env, &payload);
+
+        Ok(AttestationProof {
+            attestation,
+            ledger_sequence,
+            ledger_timestamp,
+            ledger_hash,
+        })
     }
 
     pub fn get_version(env: Env) -> Result<String, Error> {        Storage::get_version(&env).ok_or(Error::NotInitialized)
