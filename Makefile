@@ -1,3 +1,4 @@
+.PHONY: build test optimize clean install help local-deploy
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TrustLink Makefile
@@ -68,39 +69,14 @@ endif
 # Help
 # ─────────────────────────────────────────────────────────────────────────────
 help:
-	@echo ""
-	@echo "TrustLink — Makefile targets"
-	@echo "============================"
-	@echo ""
-	@echo "Build & test"
-	@echo "  make build          Build the contract (WASM release)"
-	@echo "  make test           Run all unit tests"
-	@echo "  make optimize       Build + optimize the WASM artifact"
-	@echo "  make fmt            Format source code"
-	@echo "  make clippy         Run clippy linter"
-	@echo "  make clean          Remove build artifacts"
-	@echo "  make install        Print dependency installation instructions"
-	@echo ""
-	@echo "Deployment  (requires ADMIN_SECRET env var)"
-	@echo "  make deploy                     Deploy to testnet (default)"
-	@echo "  make deploy NETWORK=testnet     Deploy to testnet"
-	@echo "  make deploy NETWORK=mainnet     Deploy to mainnet"
-	@echo "  make deploy NETWORK=local       Deploy to local node"
-	@echo ""
-	@echo "  make testnet                    Alias for deploy NETWORK=testnet"
-	@echo "  make mainnet                    Alias for deploy NETWORK=mainnet"
-	@echo "  make local                      Alias for deploy NETWORK=local"
-	@echo ""
-	@echo "Contract invocation  (requires CONTRACT_ID and ADMIN_SECRET env vars)"
-	@echo "  make invoke ARGS='-- get_admin'"
-	@echo "  make invoke ARGS='-- is_paused'"
-	@echo "  make invoke NETWORK=mainnet ARGS='-- get_global_stats'"
-	@echo ""
-	@echo "Network RPC URLs (override via environment)"
-	@echo "  TESTNET_RPC_URL  (default: $(TESTNET_RPC_URL))"
-	@echo "  MAINNET_RPC_URL  (default: $(MAINNET_RPC_URL))"
-	@echo "  LOCAL_RPC_URL    (default: $(LOCAL_RPC_URL))"
-	@echo ""
+	@echo "TrustLink Smart Contract - Makefile Commands"
+	@echo "============================================="
+	@echo "make build     - Build the contract in debug mode"
+	@echo "make test      - Run all unit tests"
+	@echo "make optimize  - Build optimized release version"
+	@echo "make clean     - Clean build artifacts"
+	@echo "make install   - Install required dependencies"
+	@echo "make local-deploy - Deploy and initialize contract on local Stellar network"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Build & test
@@ -141,96 +117,6 @@ clippy:
 	@echo "Running clippy..."
 	cargo clippy --all-targets -- -D warnings
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Deployment
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Guard: ADMIN_SECRET must be set for any network operation.
-_require_secret:
-	@if [ -z "$(ADMIN_SECRET)" ]; then \
-	  echo ""; \
-	  echo "ERROR: ADMIN_SECRET is not set."; \
-	  echo "  export ADMIN_SECRET=SXXX..."; \
-	  echo "  make deploy NETWORK=$(NETWORK)"; \
-	  echo ""; \
-	  exit 1; \
-	fi
-
-# Guard: CONTRACT_ID must be set for invoke.
-_require_contract:
-	@if [ -z "$(CONTRACT_ID)" ]; then \
-	  echo ""; \
-	  echo "ERROR: CONTRACT_ID is not set."; \
-	  echo "  export CONTRACT_ID=C..."; \
-	  echo "  make invoke ARGS='-- get_admin'"; \
-	  echo ""; \
-	  exit 1; \
-	fi
-
-# Mainnet requires an explicit confirmation to prevent accidental deploys.
-_confirm_mainnet:
-	@if [ "$(NETWORK)" = "mainnet" ]; then \
-	  echo ""; \
-	  echo "WARNING: You are about to deploy to MAINNET."; \
-	  printf "Type 'yes' to continue: "; \
-	  read confirm; \
-	  if [ "$$confirm" != "yes" ]; then \
-	    echo "Aborted."; \
-	    exit 1; \
-	  fi; \
-	fi
-
-## deploy — build the optimized WASM and deploy to $(NETWORK).
-##
-## Usage:
-##   make deploy                     # testnet
-##   make deploy NETWORK=mainnet     # mainnet (prompts for confirmation)
-##   make deploy NETWORK=local       # local node
-##
-## Outputs the CONTRACT_ID on success.
-deploy: _require_secret _confirm_mainnet optimize
-	@echo ""
-	@echo "Deploying to $(NETWORK) ($(RPC_URL))..."
-	@echo ""
-	stellar contract deploy \
-	  --source "$(ADMIN_SECRET)" \
-	  --network-passphrase "$(PASSPHRASE)" \
-	  --rpc-url "$(RPC_URL)" \
-	  --wasm "$(WASM_OPT)"
-	@echo ""
-	@echo "Save the contract ID above, then run:"
-	@echo "  export CONTRACT_ID=<id>"
-	@echo "  make invoke NETWORK=$(NETWORK) ARGS='-- initialize --admin <ADMIN_ADDRESS> --ttl_days null'"
-
-## testnet / mainnet / local — convenience aliases for deploy.
-testnet:
-	$(MAKE) deploy NETWORK=testnet
-
-mainnet:
-	$(MAKE) deploy NETWORK=mainnet
-
-local:
-	$(MAKE) deploy NETWORK=local
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Contract invocation
-# ─────────────────────────────────────────────────────────────────────────────
-
-## invoke — call a function on a deployed contract.
-##
-## Usage:
-##   make invoke ARGS='-- get_admin'
-##   make invoke ARGS='-- is_paused'
-##   make invoke ARGS='-- initialize --admin G... --ttl_days null'
-##   make invoke NETWORK=mainnet ARGS='-- get_global_stats'
-##
-## Read-only calls do not require ADMIN_SECRET (omit --source).
-## State-changing calls require ADMIN_SECRET.
-invoke: _require_contract
-	@echo "Invoking on $(NETWORK) (contract: $(CONTRACT_ID))..."
-	stellar contract invoke \
-	  --id "$(CONTRACT_ID)" \
-	  --network-passphrase "$(PASSPHRASE)" \
-	  --rpc-url "$(RPC_URL)" \
-	  $(if $(ADMIN_SECRET),--source "$(ADMIN_SECRET)",) \
-	  $(ARGS)
+local-deploy: build
+	@echo "Deploying TrustLink contract to local Stellar network..."
+	./scripts/setup_local.sh
