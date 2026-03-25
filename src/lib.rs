@@ -319,6 +319,39 @@ impl TrustLinkContract {
         Ok(())
     }
 
+    /// Pause the contract, disabling all attestation write operations.
+    ///
+    /// Read-only functions (`has_valid_claim`, `get_attestation`, etc.) remain
+    /// available while paused so that integrators can still verify existing
+    /// attestations during an incident.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] — caller is not the admin.
+    pub fn pause(env: Env, admin: Address) -> Result<(), Error> {
+        admin.require_auth();
+        Validation::require_admin(&env, &admin)?;
+        Storage::set_paused(&env, true);
+        Events::contract_paused(&env, &admin, env.ledger().timestamp());
+        Ok(())
+    }
+
+    /// Unpause the contract, re-enabling attestation write operations.
+    ///
+    /// # Errors
+    /// - [`Error::Unauthorized`] — caller is not the admin.
+    pub fn unpause(env: Env, admin: Address) -> Result<(), Error> {
+        admin.require_auth();
+        Validation::require_admin(&env, &admin)?;
+        Storage::set_paused(&env, false);
+        Events::contract_unpaused(&env, &admin, env.ledger().timestamp());
+        Ok(())
+    }
+
+    /// Return `true` if the contract is currently paused.
+    pub fn is_paused(env: Env) -> bool {
+        Storage::is_paused(&env)
+    }
+
     /// Creates a native attestation from a registered issuer about a subject.
     ///
     /// `issuer` and `subject` must be different addresses; self-attestation is
@@ -333,6 +366,7 @@ impl TrustLinkContract {
         tags: Option<Vec<String>>,
     ) -> Result<String, Error> {
         issuer.require_auth();
+        Validation::require_not_paused(&env)?;
         Validation::require_issuer(&env, &issuer)?;
         validate_metadata(&metadata)?;
         validate_tags(&tags)?;
@@ -567,6 +601,7 @@ impl TrustLinkContract {
         reason: Option<String>,
     ) -> Result<(), Error> {
         issuer.require_auth();
+        Validation::require_not_paused(&env)?;
         Validation::require_issuer(&env, &issuer)?;
         validate_reason(&reason)?;
         let mut attestation = Storage::get_attestation(&env, &attestation_id)?;
