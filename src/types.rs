@@ -42,38 +42,18 @@ pub struct TtlConfig {
     pub ttl_days: u32,
 }
 
-/// Activity metrics for a registered issuer.
+/// Global contract statistics for dashboards and analytics.
 ///
-/// Updated atomically alongside every `create_attestation` and
-/// `revoke_attestation` call, so the counters are always consistent with
-/// on-chain state.
-///
-/// ## Trustworthiness signals
-///
-/// - A high `total_revoked / total_issued` ratio may indicate an issuer that
-///   frequently issues incorrect or fraudulent attestations.
-/// - `registered_at` lets consumers weight newer issuers differently from
-///   long-standing ones.
+/// Maintained atomically on every mutating operation and queryable without auth.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IssuerStats {
-    /// Total number of attestations ever created by this issuer (includes
-    /// batch, bridge, and multi-sig activations).
-    pub total_issued: u64,
-    /// Total number of attestations revoked by this issuer.
-    pub total_revoked: u64,
-    /// Ledger timestamp at which the issuer was first registered.
-    pub registered_at: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ContractConfig {
-    pub ttl_config: TtlConfig,
-    pub fee_config: FeeConfig,
-    pub contract_name: String,
-    pub contract_version: String,
-    pub contract_description: String,
+pub struct GlobalStats {
+    /// Total number of attestations ever created (includes imported, bridged, and multi-sig).
+    pub total_attestations: u64,
+    /// Total number of attestations that have been revoked.
+    pub total_revocations: u64,
+    /// Current number of registered issuers (incremented on register, decremented on remove).
+    pub total_issuers: u64,
 }
 
 #[contracttype]

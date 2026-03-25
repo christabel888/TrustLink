@@ -14,7 +14,7 @@ use crate::events::Events;
 use crate::storage::Storage;
 use crate::types::{
     Attestation, AttestationStatus, ClaimTypeInfo, ContractMetadata, Endorsement, Error, FeeConfig,
-    IssuerMetadata, MultiSigProposal, TtlConfig, MULTISIG_PROPOSAL_TTL_SECS,
+    GlobalStats, IssuerMetadata, MultiSigProposal, TtlConfig, MULTISIG_PROPOSAL_TTL_SECS,
 };
 use crate::validation::Validation;
 
@@ -219,8 +219,8 @@ impl TrustLinkContract {
         Validation::require_admin(&env, &admin)?;
         let timestamp = env.ledger().timestamp();
         Storage::add_issuer(&env, &issuer);
-        Storage::init_issuer_stats(&env, &issuer, timestamp);
-        Events::issuer_registered(&env, &issuer, &admin, timestamp);
+        Storage::increment_total_issuers(&env);
+        Events::issuer_registered(&env, &issuer, &admin, env.ledger().timestamp());
         Ok(())
     }
 
@@ -228,6 +228,7 @@ impl TrustLinkContract {
         admin.require_auth();
         Validation::require_admin(&env, &admin)?;
         Storage::remove_issuer(&env, &issuer);
+        Storage::decrement_total_issuers(&env);
         Events::issuer_removed(&env, &issuer, &admin, env.ledger().timestamp());
         Ok(())
     }
@@ -371,6 +372,7 @@ impl TrustLinkContract {
         };
 
         store_attestation(&env, &attestation);
+        Storage::increment_total_attestations(&env, 1);
         Events::attestation_created(&env, &attestation);
         Ok(attestation_id)
     }
@@ -414,6 +416,7 @@ impl TrustLinkContract {
         };
 
         store_attestation(&env, &attestation);
+        Storage::increment_total_attestations(&env, 1);
         Events::attestation_imported(&env, &attestation);
         Ok(attestation_id)
     }
@@ -462,6 +465,7 @@ impl TrustLinkContract {
         };
 
         store_attestation(&env, &attestation);
+        Storage::increment_total_attestations(&env, 1);
         Events::attestation_bridged(&env, &attestation);
         Ok(attestation_id)
     }
@@ -510,6 +514,7 @@ impl TrustLinkContract {
             ids.push_back(attestation_id);
         }
 
+        Storage::increment_total_attestations(&env, ids.len() as u64);
         Ok(ids)
     }
 
@@ -531,6 +536,7 @@ impl TrustLinkContract {
 
         attestation.revoked = true;
         Storage::set_attestation(&env, &attestation);
+        Storage::increment_total_revocations(&env, 1);
         Events::attestation_revoked(&env, &attestation_id, &issuer);
 
         // Increment total_revoked counter atomically with the revocation write.
@@ -567,13 +573,7 @@ impl TrustLinkContract {
             count += 1;
         }
 
-        // Increment total_revoked once for the whole batch.
-        if count > 0 {
-            let mut stats = Storage::get_issuer_stats(&env, &issuer);
-            stats.total_revoked += count as u64;
-            Storage::set_issuer_stats(&env, &issuer, &stats);
-        }
-
+        Storage::increment_total_revocations(&env, count as u64);
         Ok(count)
     }
 
@@ -1058,6 +1058,7 @@ impl TrustLinkContract {
             };
 
             store_attestation(&env, &attestation);
+            Storage::increment_total_attestations(&env, 1);
             Events::attestation_created(&env, &attestation);
             Events::multisig_activated(&env, &proposal_id, &attestation_id);
         } else {
@@ -1133,6 +1134,13 @@ impl TrustLinkContract {
 
     pub fn get_version(env: Env) -> Result<String, Error> {
         Storage::get_version(&env).ok_or(Error::NotInitialized)
+    }
+
+    /// Return global contract statistics.
+    ///
+    /// No authentication required — safe to call from dashboards and analytics tools.
+    pub fn get_global_stats(env: Env) -> GlobalStats {
+        Storage::get_global_stats(&env)
     }
 
     pub fn get_contract_metadata(env: Env) -> Result<ContractMetadata, Error> {
