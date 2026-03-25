@@ -67,7 +67,8 @@
                 "void",
                 {
                   "string": "source=acme"
-                }
+                },
+                "void"
               ]
             }
           },
@@ -205,6 +206,12 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "tags"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -806,7 +813,8 @@
                 "void",
                 {
                   "string": "source=acme"
-                }
+                },
+                "void"
               ]
             }
           }
@@ -1000,6 +1008,12 @@
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "tags"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {

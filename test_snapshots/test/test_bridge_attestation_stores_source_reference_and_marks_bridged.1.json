@@ -234,6 +234,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "tags"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "timestamp"
                       },
                       "val": {
@@ -1162,6 +1168,12 @@
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "tags"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {
