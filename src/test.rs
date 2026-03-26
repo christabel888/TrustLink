@@ -1878,6 +1878,7 @@ fn test_has_all_claims_short_circuits_on_first_missing() {
     list.push_back(mer);
 
     assert!(!client.has_all_claims(&subject, &list));
+}
 
 // ── Batch attestation creation tests ─────────────────────────────────────────
 
@@ -2079,4 +2080,155 @@ fn test_create_attestations_batch_updates_subject_and_issuer_indexes() {
     let issuer_attestations = client.get_issuer_attestations(&issuer, &0, &10);
     assert_eq!(issuer_attestations.len(), 1);
 
+}
+
+// ── Storage exhaustion / limit tests (issue #80) ─────────────────────────────
+
+#[test]
+fn test_get_limits_returns_defaults() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+    client.initialize(&admin);
+
+    let limits = client.get_limits();
+    assert_eq!(limits.max_attestations_per_issuer, 10_000);
+    assert_eq!(limits.max_attestations_per_subject, 100);
+}
+
+#[test]
+fn test_admin_can_set_limits() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+    client.initialize(&admin);
+
+    client.set_limits(&admin, &500, &10);
+
+    let limits = client.get_limits();
+    assert_eq!(limits.max_attestations_per_issuer, 500);
+    assert_eq!(limits.max_attestations_per_subject, 10);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_non_admin_cannot_set_limits() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+    client.initialize(&admin);
+
+    // attacker is not admin — should panic with Unauthorized (#3)
+    client.set_limits(&attacker, &1, &1);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_issuer_limit_exceeded() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    // Set issuer limit to 2
+    client.set_limits(&admin, &2, &1000);
+
+    let claim = String::from_str(&env, "KYC_PASSED");
+
+    // First two succeed
+    let s1 = Address::generate(&env);
+    let s2 = Address::generate(&env);
+    client.create_attestation(&issuer, &s1, &claim, &None, &None);
+    env.ledger().set_timestamp(env.ledger().timestamp() + 1);
+    client.create_attestation(&issuer, &s2, &claim, &None, &None);
+
+    // Third should hit LimitExceeded (#10)
+    env.ledger().set_timestamp(env.ledger().timestamp() + 1);
+    let s3 = Address::generate(&env);
+    client.create_attestation(&issuer, &s3, &claim, &None, &None);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_subject_limit_exceeded() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    // Set subject limit to 2
+    client.set_limits(&admin, &10_000, &2);
+
+    let c1 = String::from_str(&env, "KYC_PASSED");
+    let c2 = String::from_str(&env, "AML_CLEARED");
+
+    client.create_attestation(&issuer, &subject, &c1, &None, &None);
+    env.ledger().set_timestamp(env.ledger().timestamp() + 1);
+    client.create_attestation(&issuer, &subject, &c2, &None, &None);
+
+    // Third attestation on same subject should hit LimitExceeded (#10)
+    env.ledger().set_timestamp(env.ledger().timestamp() + 1);
+    let c3 = String::from_str(&env, "MERCHANT_VERIFIED");
+    client.create_attestation(&issuer, &subject, &c3, &None, &None);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_batch_issuer_limit_exceeded() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    // Issuer limit = 2, batch of 3 subjects should fail
+    client.set_limits(&admin, &2, &1000);
+
+    let claim = String::from_str(&env, "KYC_PASSED");
+    let mut subjects = soroban_sdk::Vec::new(&env);
+    subjects.push_back(Address::generate(&env));
+    subjects.push_back(Address::generate(&env));
+    subjects.push_back(Address::generate(&env));
+
+    client.create_attestations_batch(&issuer, &subjects, &claim, &None);
+}
+
+#[test]
+fn test_limits_updated_take_effect_immediately() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    let (_, client) = create_test_contract(&env);
+    client.initialize(&admin);
+    client.register_issuer(&admin, &issuer);
+
+    // Start with tight limit
+    client.set_limits(&admin, &1, &1000);
+
+    let claim = String::from_str(&env, "KYC_PASSED");
+    client.create_attestation(&issuer, &subject, &claim, &None, &None);
+
+    // Raise the limit — next attestation should now succeed
+    client.set_limits(&admin, &10, &1000);
+    env.ledger().set_timestamp(env.ledger().timestamp() + 1);
+    let subject2 = Address::generate(&env);
+    let claim2 = String::from_str(&env, "AML_CLEARED");
+    client.create_attestation(&issuer, &subject2, &claim2, &None, &None);
+
+    assert_eq!(client.get_issuer_attestations(&issuer, &0, &10).len(), 2);
 }

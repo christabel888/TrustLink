@@ -26,7 +26,7 @@
 //!   used for pagination via `list_claim_types`.
 
 use soroban_sdk::{contracttype, Address, Env, String, Vec};
-use crate::types::{Attestation, ClaimTypeInfo, Error, IssuerMetadata};
+use crate::types::{Attestation, ClaimTypeInfo, Error, IssuerMetadata, StorageLimits};
 
 /// Keys used to address data in contract storage.
 #[contracttype]
@@ -49,6 +49,8 @@ pub enum StorageKey {
     ClaimType(String),
     /// Ordered list of registered claim type identifiers.
     ClaimTypeList,
+    /// Configurable storage limits (admin-settable).
+    Limits,
 }
 
 const DAY_IN_LEDGERS: u32 = 17280;
@@ -216,5 +218,22 @@ impl Storage {
             .persistent()
             .get(&StorageKey::ClaimTypeList)
             .unwrap_or(Vec::new(env))
+    }
+
+    /// Persist storage limits in instance storage.
+    pub fn set_limits(env: &Env, limits: &StorageLimits) {
+        env.storage().instance().set(&StorageKey::Limits, limits);
+        env.storage().instance().extend_ttl(INSTANCE_LIFETIME, INSTANCE_LIFETIME);
+    }
+
+    /// Retrieve storage limits, returning defaults if never set.
+    pub fn get_limits(env: &Env) -> StorageLimits {
+        env.storage()
+            .instance()
+            .get(&StorageKey::Limits)
+            .unwrap_or(StorageLimits {
+                max_attestations_per_issuer: 10_000,
+                max_attestations_per_subject: 100,
+            })
     }
 }

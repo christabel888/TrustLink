@@ -131,7 +131,7 @@ mod events;
 mod test;
 
 use soroban_sdk::{contract, contractimpl, Address, Env, String, Vec};
-use types::{Attestation, AttestationStatus, ClaimTypeInfo, ContractMetadata, Error, IssuerMetadata};
+use types::{Attestation, AttestationStatus, ClaimTypeInfo, ContractMetadata, Error, IssuerMetadata, StorageLimits};
 use storage::Storage;
 use validation::Validation;
 use events::Events;
@@ -270,7 +270,18 @@ impl TrustLinkContract {
         Validation::require_issuer(&env, &issuer)?;
 
         let timestamp = env.ledger().timestamp();
-        
+
+        // Enforce storage exhaustion limits
+        let limits = Storage::get_limits(&env);
+        let issuer_count = Storage::get_issuer_attestations(&env, &issuer).len();
+        if issuer_count >= limits.max_attestations_per_issuer {
+            return Err(Error::LimitExceeded);
+        }
+        let subject_count = Storage::get_subject_attestations(&env, &subject).len();
+        if subject_count >= limits.max_attestations_per_subject {
+            return Err(Error::LimitExceeded);
+        }
+
         if let Some(vf) = valid_from {
             if vf <= timestamp {
                 return Err(Error::InvalidValidFrom);
@@ -346,6 +357,14 @@ impl TrustLinkContract {
         Validation::require_issuer(&env, &issuer)?;
 
         let timestamp = env.ledger().timestamp();
+
+        // Enforce issuer-level limit up front for the whole batch
+        let limits = Storage::get_limits(&env);
+        let issuer_count = Storage::get_issuer_attestations(&env, &issuer).len();
+        if issuer_count.saturating_add(subjects.len()) > limits.max_attestations_per_issuer {
+            return Err(Error::LimitExceeded);
+        }
+
         let mut ids: Vec<String> = Vec::new(&env);
 
         for subject in subjects.iter() {
@@ -359,6 +378,12 @@ impl TrustLinkContract {
 
             if Storage::has_attestation(&env, &attestation_id) {
                 return Err(Error::DuplicateAttestation);
+            }
+
+            // Per-subject limit check
+            let subject_count = Storage::get_subject_attestations(&env, &subject).len();
+            if subject_count >= limits.max_attestations_per_subject {
+                return Err(Error::LimitExceeded);
             }
 
             let attestation = Attestation {
@@ -980,6 +1005,44 @@ impl TrustLinkContract {
         Events::attestation_updated(&env, &attestation_id, &issuer, new_expiration);
 
         Ok(())
+    }
+
+    /// Configure storage exhaustion limits (admin only).
+    ///
+    /// Sets the maximum number of attestations allowed per issuer and per subject.
+    /// Limits are stored in instance storage and take effect immediately for all
+    /// subsequent `create_attestation` calls.
+    ///
+    /// # Parameters
+    /// - `admin` — current administrator address (must authorize).
+    /// - `max_attestations_per_issuer` — max attestations a single issuer may create.
+    /// - `max_attestations_per_subject` — max attestations a single subject may hold.
+    ///
+    /// # Errors
+    /// - [`Error::NotInitialized`] — contract has not been initialized.
+    /// - [`Error::Unauthorized`] — `admin` is not the registered administrator.
+    pub fn set_limits(
+        env: Env,
+        admin: Address,
+        max_attestations_per_issuer: u32,
+        max_attestations_per_subject: u32,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        Validation::require_admin(&env, &admin)?;
+
+        Storage::set_limits(&env, &StorageLimits {
+            max_attestations_per_issuer,
+            max_attestations_per_subject,
+        });
+        Ok(())
+    }
+
+    /// Return the current storage limits.
+    ///
+    /// Returns the admin-configured limits, or the defaults
+    /// (10,000 per issuer / 100 per subject) if never explicitly set.
+    pub fn get_limits(env: Env) -> StorageLimits {
+        Storage::get_limits(&env)
     }
 
     /// Return the semver version string set at initialization (e.g. `"1.0.0"`).

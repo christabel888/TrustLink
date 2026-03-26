@@ -100,6 +100,18 @@ pub enum Error {
     Expired = 7,
     InvalidValidFrom = 8,
     InvalidExpiration = 9,
+    /// Attestation count for an issuer or subject has reached the configured limit.
+    LimitExceeded = 10,
+}
+
+/// Configurable storage limits to prevent exhaustion attacks.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageLimits {
+    /// Maximum number of attestations a single issuer may create. Default: 10,000.
+    pub max_attestations_per_issuer: u32,
+    /// Maximum number of attestations a single subject may hold. Default: 100.
+    pub max_attestations_per_subject: u32,
 }
 
 impl Attestation {
