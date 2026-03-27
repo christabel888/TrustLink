@@ -80,10 +80,10 @@ pub enum StorageKey {
     AuditLog(String),
     /// Global pause flag — when present and true, write operations are disabled.
     Paused,
-    /// An attestation request submitted by a subject, keyed by request ID.
-    AttestationRequest(String),
-    /// Ordered list of pending request IDs for an issuer address.
-    IssuerRequests(Address),
+    /// Whitelist enabled flag per issuer — when true, only whitelisted subjects are accepted.
+    WhitelistEnabled(Address),
+    /// Presence flag for a whitelisted subject under a specific issuer.
+    SubjectWhitelist(Address, Address),
 }
 
 const DAY_IN_LEDGERS: u32 = 17280;
@@ -498,41 +498,44 @@ impl Storage {
         env.storage().instance().extend_ttl(ttl, ttl);
     }
 
-    /// Persist an attestation request and refresh its TTL.
-    pub fn set_attestation_request(env: &Env, request: &AttestationRequest) {
-        let key = StorageKey::AttestationRequest(request.id.clone());
-        let ttl = get_ttl_lifetime(env);
-        env.storage().persistent().set(&key, request);
-        env.storage().persistent().extend_ttl(&key, ttl, ttl);
-    }
-
-    /// Retrieve an attestation request by ID.
+    /// Return `true` if the issuer has whitelist mode enabled.
     ///
-    /// # Errors
-    /// - [`Error::NotFound`] — no request with that ID exists.
-    pub fn get_attestation_request(env: &Env, id: &String) -> Result<AttestationRequest, Error> {
+    /// Defaults to `false` (disabled) when the key is absent.
+    pub fn is_whitelist_enabled(env: &Env, issuer: &Address) -> bool {
         env.storage()
             .persistent()
-            .get(&StorageKey::AttestationRequest(id.clone()))
-            .ok_or(Error::NotFound)
+            .get(&StorageKey::WhitelistEnabled(issuer.clone()))
+            .unwrap_or(false)
     }
 
-    /// Return the ordered list of request IDs for `issuer`, or an empty [`Vec`] if none.
-    pub fn get_issuer_requests(env: &Env, issuer: &Address) -> Vec<String> {
-        env.storage()
-            .persistent()
-            .get(&StorageKey::IssuerRequests(issuer.clone()))
-            .unwrap_or(Vec::new(env))
-    }
-
-    /// Append `request_id` to `issuer`'s request index and refresh TTL.
-    pub fn add_issuer_request(env: &Env, issuer: &Address, request_id: &String) {
-        let key = StorageKey::IssuerRequests(issuer.clone());
+    /// Enable or disable whitelist mode for `issuer`.
+    pub fn set_whitelist_enabled(env: &Env, issuer: &Address, enabled: bool) {
+        let key = StorageKey::WhitelistEnabled(issuer.clone());
         let ttl = get_ttl_lifetime(env);
-        let mut requests = Self::get_issuer_requests(env, issuer);
-        requests.push_back(request_id.clone());
-        env.storage().persistent().set(&key, &requests);
+        env.storage().persistent().set(&key, &enabled);
         env.storage().persistent().extend_ttl(&key, ttl, ttl);
+    }
+
+    /// Return `true` if `subject` is whitelisted under `issuer`.
+    pub fn is_subject_whitelisted(env: &Env, issuer: &Address, subject: &Address) -> bool {
+        env.storage()
+            .persistent()
+            .has(&StorageKey::SubjectWhitelist(issuer.clone(), subject.clone()))
+    }
+
+    /// Add `subject` to `issuer`'s whitelist.
+    pub fn add_subject_to_whitelist(env: &Env, issuer: &Address, subject: &Address) {
+        let key = StorageKey::SubjectWhitelist(issuer.clone(), subject.clone());
+        let ttl = get_ttl_lifetime(env);
+        env.storage().persistent().set(&key, &true);
+        env.storage().persistent().extend_ttl(&key, ttl, ttl);
+    }
+
+    /// Remove `subject` from `issuer`'s whitelist.
+    pub fn remove_subject_from_whitelist(env: &Env, issuer: &Address, subject: &Address) {
+        env.storage()
+            .persistent()
+            .remove(&StorageKey::SubjectWhitelist(issuer.clone(), subject.clone()));
     }
 }
 
